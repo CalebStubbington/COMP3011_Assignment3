@@ -141,6 +141,12 @@ public class VideoPlayerModel {
 //        frameProcessors.add(new FrameNumberer());
     }
     
+    public void refreshFrame() {
+    	if (playbackOpen && pauseRequested) {
+    		seekTo(currentTimestampUs);
+    	}
+    }
+    
     public void play(File file) {
         videoFile = file;
         videoDurationUs = NO_SEEK_REQUEST;
@@ -546,7 +552,8 @@ public class VideoPlayerModel {
                     frameRate,
                     intFrameRate,
                     videoFrameDurationUs,
-                    grabber.getPixelFormat()));
+                    grabber.getPixelFormat(),
+                    videoFile.getAbsolutePath()));
     		frameProcessorsInitialised = true;
     	}
     	

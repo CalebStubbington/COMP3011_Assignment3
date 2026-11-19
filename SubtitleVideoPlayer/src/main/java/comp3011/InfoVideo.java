@@ -21,5 +21,6 @@ public record InfoVideo(
         double frameRate,
         int intFrameRate,
         int frameDurationUs,
-        int pixelFormat) {
+        int pixelFormat,
+        String mediaPath) {
 }

@@ -140,6 +140,7 @@ public class VideoPlayerApp extends Application {
 
     // Entry point.
     public static void main(String[] args) {
+    	System.setProperty("java.awt.headless", "true");
         commandLineController = new CommandLineController(args);
 
         if (!commandLineController.shouldLaunchApplication()) {
