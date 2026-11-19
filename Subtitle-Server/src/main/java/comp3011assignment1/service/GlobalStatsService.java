@@ -21,7 +21,7 @@ public class GlobalStatsService {
 		usageSeconds.add(seconds);
 	}
 	
-	public UsageResponse getGlobalStats() {
+	public UsageResponse getUsage() {
 		return new UsageResponse(usageSeconds.sum());		
 	}
 }

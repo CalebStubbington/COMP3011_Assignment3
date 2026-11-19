@@ -1,5 +1,6 @@
 package comp3011assignment1.dto;
 
-public class UsageResponse {
+// returns {usage: s}
+public record UsageResponse(double usage) {
 
 }
