@@ -192,7 +192,7 @@ public class CommandLineController {
     	switch (option) {
     		case "-S":
     		case "--subtitle-frames":
-    			return null;
+    			return new FrameSubtitler();
     					
 	    	case "-n":
 	    	case "--number-frames":
