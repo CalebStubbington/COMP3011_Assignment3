@@ -1,7 +1,10 @@
 package comp3011assignment1.service;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -20,6 +23,10 @@ import com.openai.models.audio.transcriptions.TranscriptionVerbose;
  * Requests the verbose JSON format with both word and segment timestamps, and adds
  * the audio duration to the global usage total. This is only called on a cache miss,
  * so usage only counts audio we actually paid to transcribe.
+ * 
+ * The API key comes from the OPENAI_API_KEU environment variable if set,
+ * otherwise its from a key.txt file in the folder the server was started from. 
+ * The client is created per request so the application can start without a key.
  */
 
 @Service
@@ -27,13 +34,15 @@ public class TranscriptionService {
 	
 	private final GlobalStatsService globalStatsService;
 	
+	private static final Path KEY_FILE = Path.of("key.txt");
+	
 	public TranscriptionService(GlobalStatsService globalStatsService) {
 		this.globalStatsService = globalStatsService;
 	}
 	
 	public TranscriptionVerbose transcribe(byte[] audioData) {
 		
-		OpenAIClient client = OpenAIOkHttpClient.fromEnv();
+		OpenAIClient client = createClient();
 		
 		TranscriptionCreateParams params =
 				TranscriptionCreateParams.builder()
@@ -58,6 +67,22 @@ public class TranscriptionService {
 		return transcription;
 		
 		
+	}
+	
+	private OpenAIClient createClient() {
+		String envKey = System.getenv("OPENAI_API_KEY");
+		if (envKey != null && !envKey.isBlank()) {
+			return OpenAIOkHttpClient.fromEnv();
+		}
+		try {
+			String fileKey = Files.readString(KEY_FILE).trim();
+			if (fileKey.isEmpty()) {
+				throw new IllegalStateException("key.txt is empty");
+			}
+			return OpenAIOkHttpClient.builder().apiKey(fileKey).build();
+		} catch (IOException e) {
+			throw new IllegalStateException("No OPENAI_API_KEY set and key.txt could not be read from " + KEY_FILE.toAbsolutePath(), e);
+		}
 	}
 
 

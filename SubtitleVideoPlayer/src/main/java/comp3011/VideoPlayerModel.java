@@ -530,7 +530,6 @@ public class VideoPlayerModel {
     	}
     	
     	Frame frame = grabFrame();
-    	System.out.println("decode: image=" + (frame.image != null) + ", samples=" + (frame.samples != null));
     	
     	// stops decoding
     	if (frame == null) {
