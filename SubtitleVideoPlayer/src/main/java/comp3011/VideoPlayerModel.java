@@ -116,6 +116,8 @@ public class VideoPlayerModel {
     // this is the current playback session
     private long playbackGeneration = 0;
     
+    private byte[] silence = new byte[0];
+    
     // audio debug
     private long debugUntilNs;
     private long lastPumpNs;
@@ -214,15 +216,6 @@ public class VideoPlayerModel {
     public void toggleAudioOutput() {
     	
         audioOutputEnabled = !audioOutputEnabled;
-        
-        if (audioPlayer != null) {
-        	if (audioOutputEnabled) {
-            	audioPlayer.resume(); // cut off anything already in the sound buffer
-            } else {
-            	audioPlayer.pause();
-            }
-        }
-        
         notifyAudioOutputStateChanged();
     }
 
@@ -749,34 +742,23 @@ public class VideoPlayerModel {
         // Here is the real time dependent logic
         long dueTimestampUs = firstTimestampUs + (now + AUDIO_LEAD_NS - playbackStartNs) / 1_000L;
         
-        // Discard audio as it comes due, so the queue keeps tracking playback
-        // and sound can resume instantly when unmuted.
-        
-        if (!audioOutputEnabled) {
-        	while (!pendingAudio.isEmpty() && pendingAudio.peek().timestampUs() <= dueTimestampUs) {
-        		pendingAudio.remove();
-        	}
-        	return;
-        }
-        
         while (!pendingAudio.isEmpty()) {
             PendingAudio audio = pendingAudio.peek();
             if (audio.timestampUs() > dueTimestampUs) {
                 return;
             }
             
-            if (now < debugUntilNs && audioPlayer.bufferedBytes() == 0) {
-                System.out.println("UNDERRUN: sound card buffer was empty at ts=" + audio.timestampUs() / 1000 + " ms");
-            }
-
-            int written = audioPlayer.write(audio.samples(), audio.offset(), audio.remaining());
+            // writes zeros of the same length, so the card keeps running
+            byte[] data = audio.samples();
             
-            if (debugAudioWrites > 0) {
-                debugAudioWrites--;
-                System.out.println("audio ts=" + audio.timestampUs() / 1000 + " ms, due=" + dueTimestampUs / 1000
-                        + " ms, wrote=" + written + "/" + audio.remaining()
-                        + ", queued=" + pendingAudio.size());
+            if (!audioOutputEnabled) {
+            	if (silence.length < data.length) {
+            		silence = new byte[data.length];
+            	}
+            	data = silence;
             }
+            
+            int written = audioPlayer.write(audio.samples(), audio.offset(), audio.remaining());
             
             if (written <= 0) {
                 return;
