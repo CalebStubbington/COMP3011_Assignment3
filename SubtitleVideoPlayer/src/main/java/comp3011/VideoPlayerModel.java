@@ -60,7 +60,7 @@ import java.util.concurrent.RejectedExecutionException;
 public class VideoPlayerModel {
     private static final long NO_SEEK_REQUEST = -1; // Sentinel value used when no seek position is active.
     private static final long FIVE_SECONDS_US = 5_000_000L;
-    private static final long AUDIO_LEAD_NS = 30_000_000L;
+    private static final long AUDIO_LEAD_NS = 80_000_000L;
 
     private List<FrameProcessor> frameProcessors = null;
     private final Queue <PendingAudio> pendingAudio = new ArrayDeque<>();
@@ -104,6 +104,7 @@ public class VideoPlayerModel {
     private long currentTimestampUs;
     private long videoDurationUs = NO_SEEK_REQUEST;
     private int videoFrameDurationUs;
+    private int debugAudioWrites;
     private double frameRate;
     private int intFrameRate;
     private int totalVideoFrames;
@@ -114,6 +115,10 @@ public class VideoPlayerModel {
     private long relativeSeekBaseUs = NO_SEEK_REQUEST;
     // this is the current playback session
     private long playbackGeneration = 0;
+    
+    // audio debug
+    private long debugUntilNs;
+    private long lastPumpNs;
 
     public VideoPlayerModel(
             boolean audioEnabled,
@@ -202,10 +207,17 @@ public class VideoPlayerModel {
     }
 
     public void toggleAudioOutput() {
+    	
         audioOutputEnabled = !audioOutputEnabled;
-        if (!audioOutputEnabled) {
-        	flushAudioOutput(); // cut off anything already in the sound buffer
+        
+        if (audioPlayer != null) {
+        	if (audioOutputEnabled) {
+            	audioPlayer.resume(); // cut off anything already in the sound buffer
+            } else {
+            	audioPlayer.pause();
+            }
         }
+        
         notifyAudioOutputStateChanged();
     }
 
@@ -614,6 +626,11 @@ public class VideoPlayerModel {
         if (!playbackOpen) {
             return;
         }
+        
+        if (now < debugUntilNs && lastPumpNs != 0 && now - lastPumpNs > 30_000_000L) {
+            System.out.println("PUMP GAP " + (now - lastPumpNs) / 1_000_000 + " ms");
+        }
+        lastPumpNs = now;
 
         // Task (1)
         writeDueAudio(now);
@@ -742,8 +759,20 @@ public class VideoPlayerModel {
             if (audio.timestampUs() > dueTimestampUs) {
                 return;
             }
+            
+            if (now < debugUntilNs && audioPlayer.bufferedBytes() == 0) {
+                System.out.println("UNDERRUN: sound card buffer was empty at ts=" + audio.timestampUs() / 1000 + " ms");
+            }
 
             int written = audioPlayer.write(audio.samples(), audio.offset(), audio.remaining());
+            
+            if (debugAudioWrites > 0) {
+                debugAudioWrites--;
+                System.out.println("audio ts=" + audio.timestampUs() / 1000 + " ms, due=" + dueTimestampUs / 1000
+                        + " ms, wrote=" + written + "/" + audio.remaining()
+                        + ", queued=" + pendingAudio.size());
+            }
+            
             if (written <= 0) {
                 return;
             }
