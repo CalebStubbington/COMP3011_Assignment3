@@ -100,6 +100,7 @@ public class VideoPlayerModel {
     private boolean audioAvailable;
     private boolean frameProcessorsInitialised;
     private boolean endVideoReached; // tracks if the decoder has reach the end of the video
+    private boolean showFrameWhilePaused; // lets one frame through after a seek while paused
     private long currentTimestampUs;
     private long videoDurationUs = NO_SEEK_REQUEST;
     private int videoFrameDurationUs;
@@ -142,11 +143,9 @@ public class VideoPlayerModel {
     }
     
     public void refreshFrame() {
-    	if (!playbackOpen || !pauseRequested) {
-    		return;
+    	if (playbackOpen || !pauseRequested) {
+    		seekTo(currentTimestampUs);
     	}
-    	
-    	seekTo(currentTimestampUs);
     	
     	try {
     		for (int attempts = 0; attempts < 100 && pendingFrames.isEmpty() && !endVideoReached; attempts++) {
@@ -187,7 +186,7 @@ public class VideoPlayerModel {
             }
             return;
         }
-
+        
         pauseRequested = !pauseRequested;
         relativeSeekBaseUs = NO_SEEK_REQUEST;
 
@@ -196,6 +195,7 @@ public class VideoPlayerModel {
             flushAudioOutput();
         } else {
             resumePlaybackClock(System.nanoTime());
+            showFrameWhilePaused = false;
         }
 
         notifyPlaybackStateChanged();
@@ -203,8 +203,9 @@ public class VideoPlayerModel {
 
     public void toggleAudioOutput() {
         audioOutputEnabled = !audioOutputEnabled;
-        pendingAudio.clear();
-        flushAudioOutput();
+        if (!audioOutputEnabled) {
+        	flushAudioOutput(); // cut off anything already in the sound buffer
+        }
         notifyAudioOutputStateChanged();
     }
 
@@ -386,6 +387,7 @@ public class VideoPlayerModel {
         logicalPlaybackBaseUs = logicalTimestampUs;
         playbackStartNs = 0;
         pauseStartedNs = pauseRequested ? System.nanoTime() : 0;
+        showFrameWhilePaused = pauseRequested;
     }
 
     private void resumePlaybackClock(long now) {
@@ -529,20 +531,24 @@ public class VideoPlayerModel {
     		return;
     	}
     	
-    	Frame frame = grabFrame();
-    	
-    	// stops decoding
-    	if (frame == null) {
-    		endVideoReached = true;
-    		return;
-    	}
+    	// Keep grabbing until a picture arrives
+    	Frame frame;
+    	do {
+    		frame = grabFrame();
+    		
+    		// stops decoding
+        	if (frame == null) {
+        		endVideoReached = true;
+        		return;
+        	}
+        	
+        	// lets us keep the audio sample before moving on to the next frame
+        	if (audioAvailable && frame.samples != null) {
+        		queueAudio(grabber.getTimestamp(), frame);
+        	}
+    	} while (frame.image == null);
     	
     	long timestampUs = grabber.getTimestamp();
-    	
-    	// lets us keep the audio sample before moving on to the next frame
-    	if (audioAvailable && frame.samples != null) {
-    		queueAudio(timestampUs, frame);
-    	}
     	
     	// audio only frames dont need to be processed
     	if (frame.image == null) {
@@ -622,7 +628,7 @@ public class VideoPlayerModel {
         }
 
         // Task (2)
-        if (preparedFrame != null && preparedFrame.targetTimeNs() <= now) {
+        if (preparedFrame != null && preparedFrame.targetTimeNs() <= now && (!pauseRequested || showFrameWhilePaused)) {
             // We have a prepared frame ready to go and it is due (or just past due!) so get it up on screen ASAP!
             displayPreparedFrame(now);
         }
@@ -671,6 +677,7 @@ public class VideoPlayerModel {
     }
 
     private void displayPreparedFrame(long now) {
+    	showFrameWhilePaused = false;
         PreparedFrame frame = preparedFrame;
         preparedFrame = null;
         currentTimestampUs = frame.logicalTimestampUs();
@@ -694,6 +701,9 @@ public class VideoPlayerModel {
     }
 
     private void queueAudio(long timestampUs, Frame frame) {
+    	if (audioPlayer == null) {
+    		return;
+    	}
         if (!audioOutputEnabled || audioPlayer == null) {
             return;
         }
@@ -706,7 +716,7 @@ public class VideoPlayerModel {
 
     private void writeDueAudio(long now) {
         // Handle some obvious early exits
-        if (!audioOutputEnabled || audioPlayer == null) {
+        if (audioPlayer == null) {
             pendingAudio.clear();
             return;
         }
@@ -716,6 +726,17 @@ public class VideoPlayerModel {
 
         // Here is the real time dependent logic
         long dueTimestampUs = firstTimestampUs + (now + AUDIO_LEAD_NS - playbackStartNs) / 1_000L;
+        
+        // Discard audio as it comes due, so the queue keeps tracking playback
+        // and sound can resume instantly when unmuted.
+        
+        if (!audioOutputEnabled) {
+        	while (!pendingAudio.isEmpty() && pendingAudio.peek().timestampUs() <= dueTimestampUs) {
+        		pendingAudio.remove();
+        	}
+        	return;
+        }
+        
         while (!pendingAudio.isEmpty()) {
             PendingAudio audio = pendingAudio.peek();
             if (audio.timestampUs() > dueTimestampUs) {
@@ -767,6 +788,7 @@ public class VideoPlayerModel {
     	
     	playbackTimer.stop();
         playbackOpen = false;
+        showFrameWhilePaused = false;
         
         playbackGeneration++;
         
