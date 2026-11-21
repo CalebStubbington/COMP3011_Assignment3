@@ -57,6 +57,7 @@ public class VideoPlayerView {
     private final Button forwardFiveButton;
     private final Button stopButton;
     private final Button audioButton;
+    private final Button subtitleButton;
 
     public VideoPlayerView() {
         imageView.setPreserveRatio(true);
@@ -75,6 +76,7 @@ public class VideoPlayerView {
         forwardFiveButton = iconButton(createLoopIcon(true, "5"));
         stopButton = iconButton(createStopIcon());
         audioButton = iconButton(createAudioIcon(false));
+        subtitleButton = iconButton(createSubtitleIcon(false));
         setPlaybackControlsDisabled(true);
 
         HBox controls = new HBox(
@@ -85,6 +87,7 @@ public class VideoPlayerView {
                 forwardFiveButton,
                 stopButton,
                 audioButton,
+                subtitleButton,
                 statusLabel);
 
         controls.setPadding(new Insets(10));
@@ -126,6 +129,10 @@ public class VideoPlayerView {
     public Button getAudioButton() {
         return audioButton;
     }
+    
+    public Button getSubtitleButton() {
+        return subtitleButton;
+    }
 
     public void setStatus(String status) {
         statusLabel.setText(status);
@@ -150,6 +157,10 @@ public class VideoPlayerView {
     public void showAudioEnabled(boolean audioEnabled) {
         audioButton.setGraphic(createAudioIcon(audioEnabled));
     }
+    
+    public void showSubtitleEnabled(boolean subtitlesEnabled) {
+        subtitleButton.setGraphic(createSubtitleIcon(subtitlesEnabled));
+    }
 
     public void setPlaybackControlsDisabled(boolean disabled) {
         startOverButton.setDisable(disabled);
@@ -158,6 +169,7 @@ public class VideoPlayerView {
         forwardFiveButton.setDisable(disabled);
         stopButton.setDisable(disabled);
         audioButton.setDisable(disabled);
+        subtitleButton.setDisable(disabled);
     }
 
     // There are a bunch of tooltip handling methods starting from here. We want to use tooltips so that people with
@@ -169,6 +181,7 @@ public class VideoPlayerView {
         setButtonTooltip(forwardFiveButton, "[RIGHT]");
         setButtonTooltip(stopButton, "[ESC]");
         setButtonTooltip(audioButton, "[A]");
+        setButtonTooltip(subtitleButton, "[S]");
     }
 
     private void setButtonTooltip(Button button, String text) {
@@ -326,6 +339,36 @@ public class VideoPlayerView {
         pane.getChildren().add(speaker);
 
         if (audioEnabled) {
+            SVGPath innerWave = audioWave("M 18 11 C 20 12.5 20 15.5 18 17");
+            SVGPath outerWave = audioWave("M 20.5 8 C 24 11.25 24 16.75 20.5 20");
+            pane.getChildren().addAll(innerWave, outerWave);
+        } else {
+            Line slashDown = audioLine(19, 9, 25, 19);
+            Line slashUp = audioLine(25, 9, 19, 19);
+            pane.getChildren().addAll(slashDown, slashUp);
+        }
+
+        return pane;
+    }
+    
+ // Kind of speaker looking thing ...
+    private Node createSubtitleIcon(boolean subtitlesEnabled) {
+        Pane pane = new Pane();
+        pane.setMinSize(ICON_SIZE, ICON_SIZE);
+        pane.setPrefSize(ICON_SIZE, ICON_SIZE);
+        pane.setMaxSize(ICON_SIZE, ICON_SIZE);
+
+        Polygon speaker = new Polygon(
+                5, 11,
+                10, 11,
+                16, 6,
+                16, 22,
+                10, 17,
+                5, 17);
+        speaker.setFill(Color.BLACK);
+        pane.getChildren().add(speaker);
+
+        if (subtitlesEnabled) {
             SVGPath innerWave = audioWave("M 18 11 C 20 12.5 20 15.5 18 17");
             SVGPath outerWave = audioWave("M 20.5 8 C 24 11.25 24 16.75 20.5 20");
             pane.getChildren().addAll(innerWave, outerWave);

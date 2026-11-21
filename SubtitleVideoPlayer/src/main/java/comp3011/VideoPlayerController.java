@@ -11,6 +11,7 @@
 package comp3011;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 
@@ -31,6 +32,9 @@ public class VideoPlayerController {
     private final VideoPlayerModel model;
     private final VideoPlayerView view;
     private final BiConsumer<Integer, Integer> videoSizeChangedHandler;
+    
+    // added this
+    private final FrameSubtitler subtitler;
 
     public VideoPlayerController(
             boolean audioEnabled,
@@ -38,6 +42,23 @@ public class VideoPlayerController {
             List<FrameProcessor> frameProcessors) {
         this.view = new VideoPlayerView();
         this.videoSizeChangedHandler = videoSizeChangedHandler;
+        
+        List<FrameProcessor> processors = new ArrayList<>(frameProcessors);
+        FrameSubtitler found = null;
+        for (FrameProcessor processor : processors) {
+        	if (processor instanceof FrameSubtitler s) {
+        		found = s;
+        		break;
+        	}
+        }
+        
+        if (found == null) {
+        	found = new FrameSubtitler(false); // 
+        	processors.add(found);
+        }
+        
+        subtitler = found;
+        
         model = new VideoPlayerModel(
                 audioEnabled,
                 this::onVideoSizeChanged,
@@ -45,7 +66,7 @@ public class VideoPlayerController {
                 this::onStatusChanged,
                 this::onPlaybackStateChanged,
                 this::onAudioOutputStateChanged, 
-                frameProcessors);
+                processors);
 
         view.getStartOverButton().setOnAction(_ -> startOver());
         view.getBackFiveButton().setOnAction(_ -> backFiveSeconds());
@@ -54,6 +75,8 @@ public class VideoPlayerController {
         view.getStopButton().setOnAction(_ -> stopAndExit());
         view.getAudioButton().setOnAction(_ -> toggleAudioOutput());
         view.showAudioEnabled(model.isAudioOutputEnabled());
+        view.getSubtitleButton().setOnAction(_ -> toggleSubtitles());
+        view.showSubtitleEnabled(subtitler.isEnabled());
     }
 
     public void installKeyboardShortcuts(Scene scene) {
@@ -76,8 +99,17 @@ public class VideoPlayerController {
             } else if (event.getCode() == KeyCode.A) {
                 toggleAudioOutput();
                 event.consume();
+            } else if (event.getCode() == KeyCode.S) {
+            	toggleSubtitles();
+            	event.consume();
             }
         });
+    }
+    
+    private void toggleSubtitles() {
+    	subtitler.setEnabled(!subtitler.isEnabled());
+    	view.showSubtitleEnabled(subtitler.isEnabled());
+    	model.refreshFrame(); // when paused re-render the current frame so the change shows immediately
     }
 
     public VideoPlayerView getView() {

@@ -142,8 +142,18 @@ public class VideoPlayerModel {
     }
     
     public void refreshFrame() {
-    	if (playbackOpen && pauseRequested) {
-    		seekTo(currentTimestampUs);
+    	if (!playbackOpen || !pauseRequested) {
+    		return;
+    	}
+    	
+    	seekTo(currentTimestampUs);
+    	
+    	try {
+    		for (int attempts = 0; attempts < 100 && pendingFrames.isEmpty() && !endVideoReached; attempts++) {
+    			decodeAndSubmitNextFrame();
+    		}
+    	} catch (Exception e) {
+    		handlePlaybackError(e);
     	}
     }
     
@@ -520,6 +530,7 @@ public class VideoPlayerModel {
     	}
     	
     	Frame frame = grabFrame();
+    	System.out.println("decode: image=" + (frame.image != null) + ", samples=" + (frame.samples != null));
     	
     	// stops decoding
     	if (frame == null) {
