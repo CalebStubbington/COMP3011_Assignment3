@@ -46,7 +46,16 @@ public class SubtitleService {
 	public List<Cue> getCues(byte[] wav, long offsetMs) {
 		String key = sha256(wav);
 		
-		CompletableFuture<List<Cue>> future = cache.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> buildCues(transcriptionService.transcribe(wav))));
+		CompletableFuture<List<Cue>> future = cache.computeIfAbsent(key,
+		        k -> CompletableFuture.supplyAsync(() -> {
+		            try {
+		                List<Cue> built = buildCues(transcriptionService.transcribe(wav));
+		                return built;
+		            } catch (Throwable t) {
+		                t.printStackTrace();
+		                throw new RuntimeException(t);
+		            }
+		        }));
 		
 		List<Cue> relative;
 		try {
@@ -59,50 +68,52 @@ public class SubtitleService {
 		return relative.stream().map(c -> new Cue(c.startMs() + offsetMs, c.endMs() + offsetMs, c.text())).toList();
 	}
 	
-	// applies the spec's skip rule, then pairs each token with a time.
+	// applies the skip rule, then pairs each token with a time.
 	private List<Cue> buildCues(TranscriptionVerbose transcription) {
 		List<Cue> cues = new ArrayList<>();
 		List<TranscriptionWord> words = transcription.words().orElse(List.of());
 		
 		for (TranscriptionSegment segment : transcription.segments().orElse(List.of())) {
-			
-			// Spec: not displayed when noSpeechProb > 0.6 AND average log probability < -1.0
+			// skip rule
 			if (segment.noSpeechProb() > 0.6 && segment.avgLogprob() < -1.0) {
-				continue;
+			    continue;
 			}
-			
+
+			// text and tokens
 			String text = segment.text().trim();
 			if (text.isEmpty()) {
-				continue;
+			    continue;
 			}
-			
+			String[] tokens = text.split("\\s+");
+
+			// match word timings
 			double segStart = segment.start();
 			double segEnd = segment.end();
-			String[] tokens = text.split("\\s+");
 			
 			// Whisper's word entries have no punctuation, so match them one-to-one to the
 			// segment's tokens (which do).
 			List<double[]> times = new ArrayList<>();
 			for (TranscriptionWord w : words) {
-				if (w.start() >= segStart - 0.05 && w.start() < segEnd + 0.05) {
-					times.add(new double[] {w.start(), w.end() });
-				}
+			    if (w.start() >= segStart - 0.05 && w.start() < segEnd + 0.05) {
+			        times.add(new double[] { w.start(), w.end() });
+			    }
 			}
-			
-			// If the counts don't match, spread the tokens across the segment by length.
+
+			// If counts don't match, spread the tokens across the segment by length
 			if (times.size() != tokens.length) {
-				times.clear();
-				int total = Arrays.stream(tokens).mapToInt(String::length).sum();
-				double t = segStart;
-				for (String token : tokens) {
-					double d = (segEnd - segStart) * token.length() / total;
-					times.add(new double[] { t, t + d });
-					t += d;
-				}
+			    times.clear();
+			    int total = Arrays.stream(tokens).mapToInt(String::length).sum();
+			    double t = segStart;
+			    for (String token : tokens) {
+			        double d = (segEnd - segStart) * token.length() / total;
+			        times.add(new double[] { t, t + d });
+			        t += d;
+			    }
 			}
-			
+
 			splitIntoCues(tokens, times, cues);
-		}
+		}    
+		
 		
 		// Don't let a cue run into the start of the next one.
 		for (int i = 0; i + 1 < cues.size(); i++) {
@@ -127,7 +138,17 @@ public class SubtitleService {
 				String next = sb.length() == 0 ? tokens[j] : sb + " " + tokens[j];
 				
 				// Stop before exceeding two full lines or the maximum display time.
-				if (j > i && (next.length() > MAX_CHARS || times.get(j)[0] > MAX_SECONDS)) {
+				if (j > i && (next.length() > MAX_CHARS || times.get(j)[1] - times.get(i)[0] > MAX_SECONDS)) {
+					break;
+				}
+				
+				sb.setLength(0);
+				sb.append(next);
+				boolean sentenceEnd = tokens[j].matches(".*[.!?…][\"')]*$");
+				j++;
+				
+				// Start a new cue after each sentence (unless it would be tiny).
+				if (sentenceEnd && sb.length() >= 15) {
 					break;
 				}
 			}
@@ -135,6 +156,7 @@ public class SubtitleService {
 			double start = times.get(i)[0];
 			double end = Math.min(start + MAX_SECONDS, Math.max(times.get(j - 1)[1] + 0.3, MIN_SECONDS));
 			out.add(new Cue(Math.round(start * 1000), Math.round(end * 1000), wrapLines(sb.toString())));
+			i = j;
 		}
 	}
 	

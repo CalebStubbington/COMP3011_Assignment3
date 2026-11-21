@@ -26,6 +26,7 @@ public class UniversalExceptionHandler {
 	
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ErrorResponse> handlerException(Exception exception, WebRequest request) {
+		
 		String path = ((ServletWebRequest) request).getRequest().getRequestURI();
 
 		ErrorResponse response = new ErrorResponse(
