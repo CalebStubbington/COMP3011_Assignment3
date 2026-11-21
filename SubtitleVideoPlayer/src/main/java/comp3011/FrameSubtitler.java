@@ -51,15 +51,28 @@ public class FrameSubtitler extends FrameProcessor {
 		this.enabled = enabled;
 	}
 	
+	private SubtitleFetcher fetcher;
+	
 	@Override
 	public void initialise(InfoVideo videoInfo) throws Exception {
 		super.initialise(videoInfo);
+		
+		// Initialise runs again after a stop or restart, so shut down any previous fetcher.
+		if (fetcher != null) {
+			fetcher.stop();
+		}
+		
 		cues = new ConcurrentSkipListMap<>();
 		overlayCue = null;
 		overlay = null;
 		
-		// TEMP: fake cue to test rendering
-		cues.put(0L, new SubtitleCue(0, 5_000_000, "Hello world,\nthis is a test"));
+		long durationUs = videoInfo.frameRate() > 0 ? (long) (videoInfo.totalVideoFrames() * 1_000_000.0 / videoInfo.frameRate()) : 0;
+		
+		fetcher = new SubtitleFetcher(videoInfo.mediaPath(), durationUs, cues, () -> enabled);
+		
+		Thread thread = new Thread(fetcher, "subtitle-fetcher");
+		thread.setDaemon(true); // don't keep the JVM alive after the window closes
+		thread.start();
 	}
 	
 	@Override
@@ -80,8 +93,11 @@ public class FrameSubtitler extends FrameProcessor {
             throw new Exception("FrameVignetter requires at least three image channels");
         }
         
+        fetcher.noteTimestamp(info.timestampUs());
+        
         //Latest cue that started at or before this frame, if it hasn't ended yet.
         Map.Entry<Long, SubtitleCue> entry = cues.floorEntry(info.timestampUs());
+        
         if(entry == null || info.timestampUs() >= entry.getValue().endUs()) {
         	return;
         }
