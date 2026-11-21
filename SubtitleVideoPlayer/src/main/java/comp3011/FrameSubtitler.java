@@ -31,7 +31,6 @@ public class FrameSubtitler extends FrameProcessor {
 	private ConcurrentSkipListMap<Long, SubtitleCue> cues = new ConcurrentSkipListMap<>();
 	
 	// Single-entry cache of the rendered cue (process() is syncronised per processor by the model).
-	
 	private SubtitleCue overlayCue;
 	private Overlay overlay;
 	
@@ -65,6 +64,8 @@ public class FrameSubtitler extends FrameProcessor {
 		cues = new ConcurrentSkipListMap<>();
 		overlayCue = null;
 		overlay = null;
+		
+		render("Warm up"); // loads fonts now and not during playback
 		
 		long durationUs = videoInfo.frameRate() > 0 ? (long) (videoInfo.totalVideoFrames() * 1_000_000.0 / videoInfo.frameRate()) : 0;
 		

@@ -147,10 +147,15 @@ public class VideoPlayerModel {
 //        frameProcessors.add(new FrameNumberer());
     }
     
+    public int framesAhead() {
+        return pendingFrames.size() + (preparedFrame != null ? 1 : 0);
+    }
+    
     public void refreshFrame() {
-    	if (playbackOpen || !pauseRequested) {
-    		seekTo(currentTimestampUs);
-    	}
+        if (!playbackOpen || !pauseRequested) {
+            return; // never seek while playing
+        }
+        seekTo(currentTimestampUs);
     	
     	try {
     		for (int attempts = 0; attempts < 100 && pendingFrames.isEmpty() && !endVideoReached; attempts++) {
@@ -249,7 +254,7 @@ public class VideoPlayerModel {
     // this is the maxmium number of frames that can be processed/waiting at a time
     // limits the number of frames that can wait for completion to it cannot cause
     // a backlog of frames and memory usage
-    private final int maxPendingFrames = workerCount * 3;
+    private final int maxPendingFrames = Math.max(3, debugAudioWrites);
     
     // manages a fixed number of threads instead of creating new ones for every frame
     // this pool allows us to concurrently process individual frames
