@@ -110,6 +110,19 @@ public class AudioPlayer implements AutoCloseable {
             line = null;
         }
     }
+    
+    public void pause() {
+    	if (line != null) {
+    		line.stop();
+    		line.flush();
+    	}
+    }
+    
+    public void resume() {
+    	if (line != null) {
+    		line.start();
+    	}
+    }
 
     // Why do we have this? Some (many) audio output systems have a long 'wake up' delay before they output the first
     // audio. This is not great for real time playback of audio that is synched with video frames. It can lead to a
@@ -179,6 +192,10 @@ public class AudioPlayer implements AutoCloseable {
         if (outputBuffer.length < byteCount) {
             outputBuffer = new byte[byteCount];
         }
+    }
+    
+    public int bufferedBytes() {
+        return line == null ? 0 : line.getBufferSize() - line.available();
     }
 
 }
