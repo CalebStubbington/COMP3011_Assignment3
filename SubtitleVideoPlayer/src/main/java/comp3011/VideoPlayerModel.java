@@ -216,6 +216,9 @@ public class VideoPlayerModel {
     public void toggleAudioOutput() {
     	
         audioOutputEnabled = !audioOutputEnabled;
+        if (!audioOutputEnabled) {
+        	flushAudioOutput();
+        }
         notifyAudioOutputStateChanged();
     }
 

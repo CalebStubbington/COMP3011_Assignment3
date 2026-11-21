@@ -65,7 +65,11 @@ public class FrameSubtitler extends FrameProcessor {
 		overlayCue = null;
 		overlay = null;
 		
-		render("Warm up"); // loads fonts now and not during playback
+		try {
+		    render("Warm up");
+		} catch (Throwable ignored) {
+		    // no fonts here, subtitles will fail only if they are actually used
+		}
 		
 		long durationUs = videoInfo.frameRate() > 0 ? (long) (videoInfo.totalVideoFrames() * 1_000_000.0 / videoInfo.frameRate()) : 0;
 		
