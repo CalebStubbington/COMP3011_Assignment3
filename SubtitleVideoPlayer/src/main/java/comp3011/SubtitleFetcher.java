@@ -31,7 +31,7 @@ public class SubtitleFetcher implements Runnable{
 	private static final String URL = "http://localhost:8080/api/v1/subtitles";
 	private static final long CHUNK_US = 20_000_000L;
 	private static final int LOOKAHEAD_CHUNKS = 2;
-	private static final long RETRY_MS = 3_000;
+	private static final long RETRY_MS = 5_000;
 	private static final int SAMPLE_RATE = 16_000;
 	
 	private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();

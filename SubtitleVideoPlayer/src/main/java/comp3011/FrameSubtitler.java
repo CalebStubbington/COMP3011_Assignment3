@@ -72,6 +72,7 @@ public class FrameSubtitler extends FrameProcessor {
 		
 		Thread thread = new Thread(fetcher, "subtitle-fetcher");
 		thread.setDaemon(true); // don't keep the JVM alive after the window closes
+		thread.setPriority(Thread.MIN_PRIORITY); // never compete with frame processing
 		thread.start();
 	}
 	
