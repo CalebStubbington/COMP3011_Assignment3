@@ -118,9 +118,7 @@ public class VideoPlayerModel {
     
     private byte[] silence = new byte[0];
     
-    // audio debug
-    private long debugUntilNs;
-    private long lastPumpNs;
+    private long debugWallStartNs;
 
     public VideoPlayerModel(
             boolean audioEnabled,
@@ -137,16 +135,6 @@ public class VideoPlayerModel {
         this.playbackStateChangedHandler = playbackStateChangedHandler;
         this.audioOutputStateChangedHandler = audioOutputStateChangedHandler;
         this.frameProcessors = new ArrayList<>(frameProcessors);
-//        frameProcessors.add(new FrameBleeder());
-//        frameProcessors.add(new FrameScratcher());
-//        frameProcessors.add(new FrameDuster());
-//        frameProcessors.add(new FramePepperer());
-//        frameProcessors.add(new FrameBlackAndWhiter());
-//        frameProcessors.add(new FrameYellower());
-//        frameProcessors.add(new FrameVignetter());
-//        frameProcessors.add(new FrameFlickerer());
-//        frameProcessors.add(new FrameJitterer());
-//        frameProcessors.add(new FrameNumberer());
     }
     
     public int framesAhead() {
@@ -401,6 +389,8 @@ public class VideoPlayerModel {
         playbackStartNs = 0;
         pauseStartedNs = pauseRequested ? System.nanoTime() : 0;
         showFrameWhilePaused = pauseRequested;
+        
+        if (debugWallStartNs == 0) debugWallStartNs = System.nanoTime();
     }
 
     private void resumePlaybackClock(long now) {
@@ -551,6 +541,7 @@ public class VideoPlayerModel {
     		
     		// stops decoding
         	if (frame == null) {
+        		System.out.println("END: grab returned null");
         		endVideoReached = true;
         		return;
         	}
@@ -627,11 +618,6 @@ public class VideoPlayerModel {
         if (!playbackOpen) {
             return;
         }
-        
-        if (now < debugUntilNs && lastPumpNs != 0 && now - lastPumpNs > 30_000_000L) {
-            System.out.println("PUMP GAP " + (now - lastPumpNs) / 1_000_000 + " ms");
-        }
-        lastPumpNs = now;
 
         // Task (1)
         writeDueAudio(now);
@@ -776,6 +762,11 @@ public class VideoPlayerModel {
     }
 
     private void finishPlayback() {
+    	System.out.println("FINISHED at t=" + currentTimestampUs / 1000 + " ms");
+    	debugWallStartNs = 0;
+    	System.out.printf("FINISHED: video t=%d ms after %d ms wall clock%n",
+    	        currentTimestampUs / 1000, (System.nanoTime() - debugWallStartNs) / 1_000_000);
+    	
         long endTimestampUs = videoDurationUs != NO_SEEK_REQUEST
                 ? videoDurationUs
                 : currentTimestampUs;

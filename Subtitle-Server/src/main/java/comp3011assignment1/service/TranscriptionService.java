@@ -1,3 +1,8 @@
+/*
+ *  * Authors:
+ *   1. Caleb Stubbington, a2991661 in collarboration with GPT 5 & Claude Sonnet 5.5
+ */
+
 package comp3011assignment1.service;
 
 import java.io.ByteArrayInputStream;
