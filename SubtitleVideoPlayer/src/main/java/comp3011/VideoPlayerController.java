@@ -27,6 +27,10 @@ import javafx.scene.input.KeyEvent;
  * Wires up events from the {@link VideoPlayerView} to the {@link VideoPlayerModel}.
  * This includes button actions, keyboard shortcuts and display resizing.
  * </p>
+ * 
+ * finds the FrameSubtitler in the processor list. If -S was not given it creates one switched off and adds it to the end,
+ * so the button and the S key can turn on subtitles during playback.
+ * 
  */
 public class VideoPlayerController {
     private final VideoPlayerModel model;
@@ -106,17 +110,11 @@ public class VideoPlayerController {
         });
     }
     
+    // toggles subtitles on or off
     private void toggleSubtitles() {
-    	System.out.println("frames ahead at toggle: " + model.framesAhead());
-    	long t0 = System.nanoTime();
         subtitler.setEnabled(!subtitler.isEnabled());
-        long t1 = System.nanoTime();
         view.showSubtitleEnabled(subtitler.isEnabled());
-        long t2 = System.nanoTime();
         model.refreshFrame(); // when paused re-render the current frame so the change shows immediately
-        long t3 = System.nanoTime();
-        System.out.printf("toggle: flag %d us, icon %d us, refresh %d us%n",
-                (t1 - t0) / 1000, (t2 - t1) / 1000, (t3 - t2) / 1000); 
     }
 
     public VideoPlayerView getView() {
@@ -162,12 +160,6 @@ public class VideoPlayerController {
     }
 
     private void onFrameReady(Image image) {
-//    	if (image == null) {
-//    		System.out.println("recieved null image");
-//    		view.setImage(null);
-//    		return;
-//    	}
-//    	System.out.println("Frame ready: " + image.getWidth() + "x" + image.getHeight());
         view.setImage(image);
     }
 

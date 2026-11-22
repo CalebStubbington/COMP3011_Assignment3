@@ -42,6 +42,10 @@ import javafx.scene.shape.StrokeLineCap;
  * {@link VideoPlayerController}, but contains no playback logic (which all lives
  * in the controller).
  * </p>
+ * 
+ * added subtitleButton directly after the audio button editing pre-existing code.
+ * Its the same size and style.
+ * 
  */
 public class VideoPlayerView {
     private static final int ICON_SIZE = 28;
@@ -352,7 +356,7 @@ public class VideoPlayerView {
         return pane;
     }
     
- // Kind of speaker looking thing ...
+ // Rounded box containing "CC". A diagonal line is added when subtitles are off.
     private Node createSubtitleIcon(boolean subtitlesEnabled) {
         Pane pane = new Pane();
         pane.setMinSize(ICON_SIZE, ICON_SIZE);

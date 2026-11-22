@@ -55,6 +55,18 @@ import java.util.concurrent.RejectedExecutionException;
  *  
  *  while this coordinates shared resources and stale work, they do not guarantee the correct invocation of a processor across multiple
  *  workers. That would require more time than I have to implement.<p>
+ *  
+ *  refreshFrame(): when paused, seeks to the current position so a subtitle toggle redraws the frame. 
+ *  It does nothing while playing, because seeking cost a few ms.
+ *  
+ *  Decode loop: with audio, grab() also returns audio-only frames so decoding repeats until a picture arrives.
+ *  Trade-off: one call can consume several frames.
+ *  
+ *  Pausing: the display step now requires "not paused" otherwise buffered frames kept appearing after a pause.
+ *  showFrameWhilePaused lets exactly one frame through after a seek while paused.
+ *  
+ *  Muting: audio is still queued and written but as silence, so the sound card never idles.
+ *  Trade-off: unmuting is instant but muting can lag a bit.
  */
 
 public class VideoPlayerModel {
@@ -116,9 +128,9 @@ public class VideoPlayerModel {
     // this is the current playback session
     private long playbackGeneration = 0;
     
+    // Zero-filled audio written in place of samples while muted.
     private byte[] silence = new byte[0];
-    
-    private long debugWallStartNs;
+
 
     public VideoPlayerModel(
             boolean audioEnabled,
@@ -390,7 +402,6 @@ public class VideoPlayerModel {
         pauseStartedNs = pauseRequested ? System.nanoTime() : 0;
         showFrameWhilePaused = pauseRequested;
         
-        if (debugWallStartNs == 0) debugWallStartNs = System.nanoTime();
     }
 
     private void resumePlaybackClock(long now) {
@@ -541,7 +552,6 @@ public class VideoPlayerModel {
     		
     		// stops decoding
         	if (frame == null) {
-        		System.out.println("END: grab returned null");
         		endVideoReached = true;
         		return;
         	}
@@ -762,11 +772,6 @@ public class VideoPlayerModel {
     }
 
     private void finishPlayback() {
-    	System.out.println("FINISHED at t=" + currentTimestampUs / 1000 + " ms");
-    	debugWallStartNs = 0;
-    	System.out.printf("FINISHED: video t=%d ms after %d ms wall clock%n",
-    	        currentTimestampUs / 1000, (System.nanoTime() - debugWallStartNs) / 1_000_000);
-    	
         long endTimestampUs = videoDurationUs != NO_SEEK_REQUEST
                 ? videoDurationUs
                 : currentTimestampUs;

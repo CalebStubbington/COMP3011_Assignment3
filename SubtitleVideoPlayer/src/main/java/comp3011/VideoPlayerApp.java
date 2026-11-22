@@ -29,6 +29,8 @@ import javafx.stage.Stage;
  * command-line launch settings, and starts playback. It also resizes the video
  * display to fit the selected screen.
  * </p>
+ * 
+ * Java2D (which is used to draw subtitles) must not try to open its own windows
  */
 public class VideoPlayerApp extends Application {
     private static CommandLineController commandLineController;
