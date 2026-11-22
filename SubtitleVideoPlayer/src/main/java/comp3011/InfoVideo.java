@@ -4,7 +4,7 @@
  * 
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. <student name and student number insert here upon modification>
+ *   2. Caleb Stubbington, a2991661 in collarboration with Claude Sonnet 5.5
  *
  * Copyright 2026 Simon Ratcliffe
  */
