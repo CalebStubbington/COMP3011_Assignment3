@@ -23,11 +23,25 @@ import comp3011assignment1.dto.Cue;
  * The cache is keyed by a hash of the audio bytes, so repeat plays and seeks never
  * pay for the same audio twice. Storing the CompletableFuture also means that two
  * simultaneous requests for the same audio share a single OpenAI call.
+ * 
+ * CompletableFuture is used so two simulataneous requests for the same audio share one
+ * OpenAI call. Failures are removed.
+ * 
+ * Trade-offs: the cahse is in memory so it is lost on restart, unbound and only matches byte-identical chunks.
+ * Cues are cached relative to the chunk start and shifted by the offset on the way out,
+ * so one cached result is valid wherever the chunk sits in the movie.
+ * Cue building is on the server so the player has less to spread resources too and results are cacheable.
+ * Work timings from Whisper habe no punctuation and segment text has no work timings, so they are paired token by token. 
+ * If the counts differ, timings are spread evenly across the segment. Trade-off: the timings for those segments are approximated.
+ * 
+ * Known limitation: a request that times out does not cancel its call, so a retry can start
+ * a second call for the same audio.
  */
 
 @Service
 public class SubtitleService {
-
+	
+	// Limits for the subtitles
 	private static final int MAX_PER_LINE = 42;
 	private static final int MAX_CHARS = MAX_PER_LINE * 2;
 	private static final double MAX_SECONDS = 7.0;
@@ -46,6 +60,7 @@ public class SubtitleService {
 	public List<Cue> getCues(byte[] wav, long offsetMs) {
 		String key = sha256(wav);
 		
+		// computeIfAbsent is atmomic per key, meaning once request starts the work, the others reuse its future.
 		CompletableFuture<List<Cue>> future = cache.computeIfAbsent(key,
 		        k -> CompletableFuture.supplyAsync(() -> {
 		            try {
@@ -61,7 +76,7 @@ public class SubtitleService {
 		try {
 			relative = future.get(60, TimeUnit.SECONDS);
 		} catch (Exception e) {
-			cache.remove(key, future); // never cache a failure.
+			cache.remove(key, future); // never cache a failure, so the next request retries.
 			throw new RuntimeException("Failed to transcribe audio", e);
 		}
 		
@@ -69,10 +84,12 @@ public class SubtitleService {
 	}
 	
 	// applies the skip rule, then pairs each token with a time.
+	// convert's segments and works into cues relative to the start of the chunk.
 	private List<Cue> buildCues(TranscriptionVerbose transcription) {
 		List<Cue> cues = new ArrayList<>();
 		List<TranscriptionWord> words = transcription.words().orElse(List.of());
 		
+		// not displayed when noSpeechProb > 0.6 and average log probability < -1.0
 		for (TranscriptionSegment segment : transcription.segments().orElse(List.of())) {
 			// skip rule
 			if (segment.noSpeechProb() > 0.6 && segment.avgLogprob() < -1.0) {
@@ -84,7 +101,7 @@ public class SubtitleService {
 			if (text.isEmpty()) {
 			    continue;
 			}
-			String[] tokens = text.split("\\s+");
+			String[] tokens = text.split("\\s+"); // words with punctuation
 
 			// match word timings
 			double segStart = segment.start();
@@ -99,7 +116,8 @@ public class SubtitleService {
 			    }
 			}
 
-			// If counts don't match, spread the tokens across the segment by length
+			// If counts don't match, token by token pairing would be wrong
+			// so instead spread the tokens across the segment in proportion to their length
 			if (times.size() != tokens.length) {
 			    times.clear();
 			    int total = Arrays.stream(tokens).mapToInt(String::length).sum();
@@ -138,6 +156,7 @@ public class SubtitleService {
 				String next = sb.length() == 0 ? tokens[j] : sb + " " + tokens[j];
 				
 				// Stop before exceeding two full lines or the maximum display time.
+				// j > i guarantees at least one token per cue so the outer loop always advances
 				if (j > i && (next.length() > MAX_CHARS || times.get(j)[1] - times.get(i)[0] > MAX_SECONDS)) {
 					break;
 				}
@@ -147,12 +166,13 @@ public class SubtitleService {
 				boolean sentenceEnd = tokens[j].matches(".*[.!?…][\"')]*$");
 				j++;
 				
-				// Start a new cue after each sentence (unless it would be tiny).
+				// Start a new cue after each sentence unless it would be tiny.
 				if (sentenceEnd && sb.length() >= 15) {
 					break;
 				}
 			}
 			
+			// show from the first word's start until just after the last word, within 1 to 7 seconds.
 			double start = times.get(i)[0];
 			double end = Math.min(start + MAX_SECONDS, Math.max(times.get(j - 1)[1] + 0.3, MIN_SECONDS));
 			out.add(new Cue(Math.round(start * 1000), Math.round(end * 1000), wrapLines(sb.toString())));
@@ -178,6 +198,7 @@ public class SubtitleService {
 			if (first > MAX_PER_LINE || second > MAX_PER_LINE) {
 				continue;
 			}
+			// lower is better, makes balanced lines
 			double score = Math.abs(first - second) - (",;:.!?".indexOf(text.charAt(i - 1)) >= 0 ? 10 : 0);
 			if (score < baseScore) {
 				baseScore = score;

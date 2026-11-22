@@ -20,6 +20,13 @@ import comp3011assignment1.dto.SubtitleResponse;
  * returning timed subtitle cues for it.
  * 
  * startMs is where the chunk begins in the movie, so the return cue times are absolute
+ * 
+ * replaced Assignment 1's /transcription endpoint.
+ * 
+ * Whisper only knows times within the chunk so the offset lets us return absolute movie times.
+ * 
+ * Trade-off: the controller stays thin as it only reads bytes, calls the service and wraps the result.
+ * Failures are passed to UniversalExceptionHandler.
  */
 
 @RestController

@@ -32,6 +32,10 @@ import com.openai.models.audio.transcriptions.TranscriptionVerbose;
  * The API key comes from the OPENAI_API_KEU environment variable if set,
  * otherwise its from a key.txt file in the folder the server was started from. 
  * The client is created per request so the application can start without a key.
+ * 
+ * A new client is built per request, so the server starts without a key and checks
+ * for the key, at a small cost.
+ * 
  */
 
 @Service
@@ -39,6 +43,7 @@ public class TranscriptionService {
 	
 	private final GlobalStatsService globalStatsService;
 	
+	// key.txt in the folder the server was started from.
 	private static final Path KEY_FILE = Path.of("key.txt");
 	
 	public TranscriptionService(GlobalStatsService globalStatsService) {
@@ -52,10 +57,12 @@ public class TranscriptionService {
 		TranscriptionCreateParams params =
 				TranscriptionCreateParams.builder()
 				.file(MultipartField.<InputStream>builder()
+						// the .wav name matters as OpenAI picks its decoder from the file extension
 						.value(new ByteArrayInputStream(audioData))
 						.filename("audio.wav")
 						.build())
 				.model(AudioModel.WHISPER_1)
+				// Verbose JSON is the only format that includes timings and confidence values.
 				.responseFormat(AudioResponseFormat.VERBOSE_JSON)
 				.timestampGranularities(List.of(
 						TranscriptionCreateParams.TimestampGranularity.WORD,
@@ -74,6 +81,7 @@ public class TranscriptionService {
 		
 	}
 	
+	// FInds the API key in the environment variable then looks for key.txt and builds a client with it
 	private OpenAIClient createClient() {
 		String envKey = System.getenv("OPENAI_API_KEY");
 		if (envKey != null && !envKey.isBlank()) {
@@ -86,6 +94,7 @@ public class TranscriptionService {
 			}
 			return OpenAIOkHttpClient.builder().apiKey(fileKey).build();
 		} catch (IOException e) {
+			// the message shows the full path so you can tell if you picked the wrong folder.
 			throw new IllegalStateException("No OPENAI_API_KEY set and key.txt could not be read from " + KEY_FILE.toAbsolutePath(), e);
 		}
 	}
