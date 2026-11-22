@@ -24,15 +24,35 @@ import org.bytedeco.javacv.Frame;
 /**
  * Burns speech-to-text subtitles (white, black outline, sans serif)
  * Can be switched on and off while the video is playing
+ * 
+ * An FrameProcessor. initialise() starts a subtitleFetcher thread that
+ * fills the cue map.
+ * process() looks ip the cue for each frame's timestamp and blend it in.
+ * Treading: "enabled" is volatile because it is written by JAVAFX thread and then read
+ * by workers. The cue map is ConcurrentSkipListMap so there is no lock.
+ * The overlay cache needs no lock because the model calls process() and initialise() under synchronized(processor)
+ * 
+ * Performance: text is rendered once per cue and then only blended per frame.
+ * 
+ * Trade-off: the text is part of the picture. Frames the workers have already processed (up to maxPendingFrames ahead)
+ * keep the old settings, so a toggle takes affect after a short delay (~0.25seconds) and a paused display
+ * only updates after the frame is re-decoded.
+ * 
+ * The toggle button can create this processor disabled when -S was not given, so it is last in the processor
+ * order and effect listed after -S do not apply to the text.
  */
 
 public class FrameSubtitler extends FrameProcessor {
 	
+	// a rendered subtitle
 	private record Overlay(int width, int height, int[] argb) {
 		
 	}
 	
+	// Written by the JavaFX thread (button, hotkey) and read by the frame worker and the fetcher.
 	private volatile boolean enabled;
+	
+	// Cues keyed by start time and sorted so floorEntry() finds the latest cue at or before time t
 	private ConcurrentSkipListMap<Long, SubtitleCue> cues = new ConcurrentSkipListMap<>();
 	
 	// Single-entry cache of the rendered cue (process() is syncronised per processor by the model).
@@ -43,6 +63,7 @@ public class FrameSubtitler extends FrameProcessor {
 		this(true);
 	}
 	
+	// enabled is false when the processor is created only so the toggle button can switch on later.
 	public FrameSubtitler(boolean enabled) {
 		this.enabled = enabled;
 	}
@@ -57,6 +78,7 @@ public class FrameSubtitler extends FrameProcessor {
 	
 	private SubtitleFetcher fetcher;
 	
+	// called once per playback and after a stop or restart.
 	@Override
 	public void initialise(InfoVideo videoInfo) throws Exception {
 		super.initialise(videoInfo);
@@ -66,6 +88,7 @@ public class FrameSubtitler extends FrameProcessor {
 			fetcher.stop();
 		}
 		
+		// a fresh map, so cues from a previous playback cannot appear.
 		cues = new ConcurrentSkipListMap<>();
 		overlayCue = null;
 		overlay = null;
@@ -76,6 +99,7 @@ public class FrameSubtitler extends FrameProcessor {
 		    // no fonts here, subtitles will fail only if they are actually used
 		}
 		
+		// estimated video length which is used to stop the fetcher asking beyond the end.
 		long durationUs = videoInfo.frameRate() > 0 ? (long) (videoInfo.totalVideoFrames() * 1_000_000.0 / videoInfo.frameRate()) : 0;
 		
 		fetcher = new SubtitleFetcher(videoInfo.mediaPath(), durationUs, cues, () -> enabled);
@@ -86,6 +110,7 @@ public class FrameSubtitler extends FrameProcessor {
 		thread.start();
 	}
 	
+	// called for every frame on a worker thread.
 	@Override
     public void process(Frame frame, InfoFrame info) throws Exception {
 		if (!enabled) {
@@ -104,6 +129,7 @@ public class FrameSubtitler extends FrameProcessor {
             throw new Exception("FrameVignetter requires at least three image channels");
         }
         
+        // tells the fetcher where the playback is, after seeking this is what makes the new position first
         fetcher.noteTimestamp(info.timestampUs());
         
         //Latest cue that started at or before this frame, if it hasn't ended yet.
@@ -126,16 +152,19 @@ public class FrameSubtitler extends FrameProcessor {
 	private Overlay render(String text) {
 		
 		String[] lines = text.split("\n");
+		
+		// font size scales with the frame height so the text looks the right size
 		int fontSize = Math.max(14, videoInfo.imageHeight() / 18);
 		Font font = new Font(Font.SANS_SERIF, Font.BOLD, fontSize);
 		
+		// A 1x1 image exists only to measure text before the real image is created
 		BufferedImage scratch = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D scratchGraphics = scratch.createGraphics();
 		FontMetrics metrics = scratchGraphics.getFontMetrics(font);
 		scratchGraphics.dispose();
 		
 		float outline = fontSize / 6f;
-		int pad = (int) Math.ceil(outline) + 2;
+		int pad = (int) Math.ceil(outline) + 2; // room so the outline is not clipped
 		int lineHeight = metrics.getHeight();
 		int textWidth = 0;
 		for (String line : lines) {
@@ -157,6 +186,7 @@ public class FrameSubtitler extends FrameProcessor {
 			float x = pad + (textWidth - metrics.stringWidth(lines[i])) / 2f; //centre each line
 			Shape shape = glyphs.getOutline(x, pad + i * lineHeight + metrics.getAscent());
 			
+			// wide black background with smaller white text on top
 			g.setColor(Color.BLACK); // wide black stroke first
 			g.draw(shape);
 			g.setColor(Color.WHITE); // then white fill on top
@@ -167,11 +197,12 @@ public class FrameSubtitler extends FrameProcessor {
 		return new Overlay(width, height, image.getRGB(0, 0, width, height, null, 0, width));
 	}
 	
+	// copies the overlay onto the frame, mixing by each pixel's alpha so edges are smooth
 	private void blend(ByteBuffer pixels, Overlay o) {
 		int imageWidth = videoInfo.imageWidth();
 		int imageHeight = videoInfo.imageHeight();
 		int channels = videoInfo.imageChannels();
-		int stride = videoInfo.imageStride();
+		int stride = videoInfo.imageStride(); // bytes per row
 		
 		int x0 = (imageWidth - o.width()) / 2;
 		int y0 = imageHeight - o.height() - imageHeight / 20; //centred, 5% up from the bottom
@@ -185,13 +216,13 @@ public class FrameSubtitler extends FrameProcessor {
 			for (int ox = 0; ox < o.width(); ox++) {
 				int x = x0 + ox;
 				if (x < 0 || x >= imageWidth) {
-					continue;
+					continue; 
 				}
 				
 				int argb = o.argb()[oy * o.width() + ox];
 				int alpha = argb >>> 24;
 				if (alpha == 0) {
-					continue;
+					continue; // transparent background
 				}
 				
 				int r = (argb >> 16) & 0xff;
