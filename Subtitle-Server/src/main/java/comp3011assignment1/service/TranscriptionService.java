@@ -22,6 +22,8 @@ import com.openai.models.audio.AudioResponseFormat;
 import com.openai.models.audio.transcriptions.TranscriptionCreateParams;
 import com.openai.models.audio.transcriptions.TranscriptionVerbose;
 
+import org.springframework.beans.factory.annotation.Value;
+
 /**
  * Service for communicating with the external cloud STT API (OpenAI whisper-1)
  * 
@@ -41,13 +43,17 @@ import com.openai.models.audio.transcriptions.TranscriptionVerbose;
 @Service
 public class TranscriptionService {
 	
+	private static final String DEFAULT_KEY_FILE = "key.txt";
+	
 	private final GlobalStatsService globalStatsService;
 	
-	// key.txt in the folder the server was started from.
-	private static final Path KEY_FILE = Path.of("key.txt");
+	private final String configuredKeyFile;
 	
-	public TranscriptionService(GlobalStatsService globalStatsService) {
+	private volatile String cachedKey;
+	
+	public TranscriptionService(GlobalStatsService globalStatsService, @Value("${openai.key-file:}") String configuredKeyFile) {
 		this.globalStatsService = globalStatsService;
+		this.configuredKeyFile = configuredKeyFile;
 	}
 	
 	public TranscriptionVerbose transcribe(byte[] audioData) {
@@ -83,21 +89,47 @@ public class TranscriptionService {
 	
 	// FInds the API key in the environment variable then looks for key.txt and builds a client with it
 	private OpenAIClient createClient() {
-		String envKey = System.getenv("OPENAI_API_KEY");
-		if (envKey != null && !envKey.isBlank()) {
-			return OpenAIOkHttpClient.fromEnv();
-		}
-		try {
-			String fileKey = Files.readString(KEY_FILE).trim();
-			if (fileKey.isEmpty()) {
-				throw new IllegalStateException("key.txt is empty");
+		return OpenAIOkHttpClient.builder().apiKey(apiKey()).build();
+	}
+	
+	private String apiKey() {
+		String key = cachedKey;
+		if(key == null) {
+			synchronized (this) {
+				if (cachedKey == null) {
+					cachedKey = loadKey();
+				}
+				key = cachedKey;
 			}
-			return OpenAIOkHttpClient.builder().apiKey(fileKey).build();
+		}
+		return key;
+	}
+	
+	private String loadKey() {
+		String keyFile = System.getenv("OPENAI_API_KEY_FILE");
+		
+		if (keyFile != null && !keyFile.isBlank()) {
+			return readKeyFile(Path.of(keyFile));
+		}
+		
+		if (!configuredKeyFile.isBlank()) {
+			return readKeyFile(Path.of(configuredKeyFile));
+		}
+		
+		String envKey = System.getenv("OPEN_API_KEY");
+		
+		if (envKey != null && !envKey.isBlank()) {
+			return envKey;
+		}
+		
+		return readKeyFile(Path.of(DEFAULT_KEY_FILE));
+	}
+	
+	private String readKeyFile(Path path) {
+		try {
+			return Files.readString(path);
 		} catch (IOException e) {
-			// the message shows the full path so you can tell if you picked the wrong folder.
-			throw new IllegalStateException("No OPENAI_API_KEY set and key.txt could not be read from " + KEY_FILE.toAbsolutePath(), e);
+			throw new IllegalStateException("API key file could not be read");
 		}
 	}
-
-
 }
