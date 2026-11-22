@@ -382,24 +382,25 @@ public class VideoPlayerView {
         pane.setPrefSize(ICON_SIZE, ICON_SIZE);
         pane.setMaxSize(ICON_SIZE, ICON_SIZE);
 
-        Polygon speaker = new Polygon(
-                5, 11,
-                10, 11,
-                16, 6,
-                16, 22,
-                10, 17,
-                5, 17);
-        speaker.setFill(Color.BLACK);
-        pane.getChildren().add(speaker);
-
-        if (subtitlesEnabled) {
-            SVGPath innerWave = audioWave("M 18 11 C 20 12.5 20 15.5 18 17");
-            SVGPath outerWave = audioWave("M 20.5 8 C 24 11.25 24 16.75 20.5 20");
-            pane.getChildren().addAll(innerWave, outerWave);
-        } else {
-            Line slashDown = audioLine(19, 9, 25, 19);
-            Line slashUp = audioLine(25, 9, 19, 19);
-            pane.getChildren().addAll(slashDown, slashUp);
+        javafx.scene.shape.Rectangle box = new javafx.scene.shape.Rectangle(3, 6, 22, 16);
+        
+        box.setArcWidth(5);
+        box.setArcHeight(5);
+        box.setFill(null);
+        box.setStroke(Color.BLACK);
+        box.setStrokeWidth(2.0);
+        
+        Label cc = new Label("CC");
+        
+        cc.setMinSize(ICON_SIZE, ICON_SIZE);
+        cc.setAlignment(Pos.CENTER);
+        cc.setStyle("-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: black;");
+        cc.setMouseTransparent(true);
+        
+        pane.getChildren().addAll(box, cc);
+        
+        if (!subtitlesEnabled) {
+        	pane.getChildren().add(audioLine(3, 24, 25, 4));
         }
 
         return pane;
