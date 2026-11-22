@@ -22,6 +22,11 @@ import java.util.List;
  * or help text, and exposes the resulting launch configuration via methods to the
  * {@link VideoPlayerApp}.
  * </p>
+ * 
+ * added -S / --subtitle-frames which creates a FrameSubtitler.
+ * 
+ * Trade-off: if -S is given more than once, only the first subtitler is controlled by the button.
+ * 
  */
 public class CommandLineController {
     private final String[] args;

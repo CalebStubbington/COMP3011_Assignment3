@@ -10,6 +10,13 @@
  */
 package comp3011;
 
+/**
+ * mediaPath was added so SubtitleFetcher can open the file iteself to
+ * extract audio. Added as the last component so existing positions dont get affected.
+ * 
+ * Trade-off: every processor now sees the full path, though only subtitle processor needs it.
+ */
+
 public record InfoVideo(
         String mediaName,
         int totalVideoFrames,

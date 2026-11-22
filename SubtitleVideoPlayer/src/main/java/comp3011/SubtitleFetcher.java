@@ -6,6 +6,7 @@
 package comp3011;
 
 import java.io.ByteArrayOutputStream;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -32,12 +33,28 @@ import org.bytedeco.javacv.FrameGrabber;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+/**
+ * Background thread that fetcher subtitle cues from the server in 20 second chunks and stores
+ * them in a map shared with FrameSubtitlier.
+ * 
+ * audio is read with its own FFmpegFrameGrabber, never the player's, so
+ * playback is not touched. Network and decoding happen off the JavaFX and worker threads.
+ * 
+ * Ever failure such as server down, network lost and media removed is caught, logged and the chunk is retried after a delay.
+ * The thread never dies, and nothing is requested while subtitles are off.
+ * 
+ * Audio is converted to 16 kHz mono 16-bit, about 640KB per 20 seconds, which is plenty for Whisper's 25 mb limit.
+ * 
+ * Trade-offs: 20 seconds chunks mean fewer requests but a delay of several seconds before the first subtitles, and a phrase spoken across
+ * a chunk boundary can be split. Chunks are in parallel. An idle fetcher polls every 200ms instead of waiting to be woken.
+ */
+
 public class SubtitleFetcher implements Runnable{
 	private static final String URL = "http://localhost:8080/api/v1/subtitles";
-	private static final long CHUNK_US = 20_000_000L;
-	private static final int LOOKAHEAD_CHUNKS = 2;
-	private static final long RETRY_MS = 5_000;
-	private static final int SAMPLE_RATE = 16_000;
+	private static final long CHUNK_US = 20_000_000L; // length of audio sent per request.
+	private static final int LOOKAHEAD_CHUNKS = 2; // how many chunks ahead of playback to prepare
+	private static final long RETRY_MS = 5_000; // wait before retrying a failed chunk
+	private static final int SAMPLE_RATE = 16_000; // Hz sent to the server.
 	
 	private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
 	
@@ -53,8 +70,8 @@ public class SubtitleFetcher implements Runnable{
 	private final ConcurrentSkipListMap<Long, SubtitleCue> store;
 	private final BooleanSupplier enabled;
 	
-	private volatile long currentUs;
-	private volatile boolean running = true;
+	private volatile long currentUs; // latest playback position
+	private volatile boolean running = true; // cleared by stop()
 	
 	SubtitleFetcher(String mediaPath, long durationUs, ConcurrentSkipListMap<Long, SubtitleCue> store, BooleanSupplier enabled) {
 		this.mediaPath = mediaPath;
@@ -96,9 +113,11 @@ public class SubtitleFetcher implements Runnable{
 		}
 	}
 	
+	
+	// Chooses the chunk to fetch next
 	private Long nextChunk() {
 		if (!enabled.getAsBoolean()) {
-			return null;
+			return null; // subtites are off
 		}
 		
 		long base = Math.max(0,  currentUs) / CHUNK_US;
@@ -118,27 +137,27 @@ public class SubtitleFetcher implements Runnable{
 	}
 	
     private void fetchChunk(long chunk) throws Exception {
-        long[] actualStartUs = new long[1];
+        long[] actualStartUs = new long[1]; // a one element array is how a method returns a second value
         byte[] wav = extractWav(chunk * CHUNK_US, actualStartUs);
 
         if (wav == null) {
-            System.out.println("Chunk " + chunk + ": no audio extracted (null WAV)");
-            return;
+            return; // no audio in this chunk
         }
-
+        
         List<SubtitleCue> cues = postToServer(wav, actualStartUs[0] / 1000);
-
+        
+        // sends the real start time of the audio as seeking can land slightly early.
         for (SubtitleCue cue : cues) {
             store.put(cue.startUs(), cue);
         }
     }
 	
-	
+	// Decodes one chunk into 16 kHz mono 16-bit WAV 
 	private byte[] extractWav(long startUs, long[] actualStartUs) throws Exception {
 		ByteArrayOutputStream pcm = new ByteArrayOutputStream();
 		
 		try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(mediaPath)) {
-			grabber.setSampleRate(SAMPLE_RATE);
+			grabber.setSampleRate(SAMPLE_RATE); // FFmpeg resamples for us
 			grabber.setAudioChannels(1);
 			grabber.setSampleMode(FrameGrabber.SampleMode.SHORT);
 			grabber.start();
@@ -158,13 +177,13 @@ public class SubtitleFetcher implements Runnable{
 					first = false;
 				}
 				if (frame.timestamp - actualStartUs[0] >= CHUNK_US) {
-					break;
+					break; // collected a full chunk
 				}
 				if (frame.samples != null && frame.samples[0] instanceof ShortBuffer samples) {
-					ShortBuffer copy = samples.duplicate();
+					ShortBuffer copy = samples.duplicate(); // do not disturb the original buffer's position
 					while (copy.hasRemaining()) {
 						short value = copy.get();
-						pcm.write(value & 0xff);
+						pcm.write(value & 0xff); // WAV is low byte first
 						pcm.write((value >> 8) & 0xff); // little-endian
 					}
 				}
@@ -181,10 +200,10 @@ public class SubtitleFetcher implements Runnable{
 	private byte[] wrapAsWav(byte[] pcm) {
 		ByteBuffer buffer = ByteBuffer.allocate(44 + pcm.length).order(ByteOrder.LITTLE_ENDIAN);
 		buffer.put("RIFF".getBytes(StandardCharsets.US_ASCII));
-		buffer.putInt(36 + pcm.length);
+		buffer.putInt(36 + pcm.length); // file size minus 8
 		buffer.put("WAVE".getBytes(StandardCharsets.US_ASCII));
-		buffer.put("fmt ".getBytes(StandardCharsets.US_ASCII));
-		buffer.putInt(16);
+		buffer.put("fmt ".getBytes(StandardCharsets.US_ASCII)); // the trailing space is part of the format
+		buffer.putInt(16); // size of this block
 		buffer.putShort((short) 1); // PCM
 		buffer.putShort((short) 1); // mono
 		buffer.putInt(SAMPLE_RATE);
@@ -199,6 +218,8 @@ public class SubtitleFetcher implements Runnable{
 	
 	// Sends the WAV as a multipart form (same format as the curl test) and parses the cues.
 	private List<SubtitleCue> postToServer(byte[] wav, long startMs) throws Exception {
+		
+		// the boundary sperates the form's field and must not appear inside the data.
 		String boundary = "----subtitles" + System.nanoTime();
 		ByteArrayOutputStream body = new ByteArrayOutputStream();
 		
@@ -208,7 +229,7 @@ public class SubtitleFetcher implements Runnable{
 		body.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
 		
 		HttpRequest request = HttpRequest.newBuilder(URI.create(URL))
-				.timeout(Duration.ofSeconds(60)).header("Content-Type", "multipart/form-data; boundary=" + boundary)
+				.timeout(Duration.ofSeconds(60)).header("Content-Type", "multipart/form-data; boundary=" + boundary) // stops a hung server freezing this thread forever
 				.POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())).build();
 		
 		HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
