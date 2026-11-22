@@ -108,6 +108,12 @@ public class TranscriptionService {
 	private String loadKey() {
 		String keyFile = System.getenv("OPENAI_API_KEY_FILE");
 		
+		String envKey = System.getenv("OPENAI_API_KEY");
+		
+		if (envKey != null && !envKey.isBlank()) {
+			return envKey;
+		}
+		
 		if (keyFile != null && !keyFile.isBlank()) {
 			return readKeyFile(Path.of(keyFile));
 		}
@@ -116,11 +122,7 @@ public class TranscriptionService {
 			return readKeyFile(Path.of(configuredKeyFile));
 		}
 		
-		String envKey = System.getenv("OPEN_API_KEY");
 		
-		if (envKey != null && !envKey.isBlank()) {
-			return envKey;
-		}
 		
 		return readKeyFile(Path.of(DEFAULT_KEY_FILE));
 	}
