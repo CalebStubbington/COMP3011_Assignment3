@@ -33,6 +33,25 @@ import org.bytedeco.javacv.FrameGrabber;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+//AI Assistance and Acknowledgement
+//
+//AI assistance was utilised throughout the development process
+//as a supporting tool. Claude (Anthropic) was used to assist with:
+//
+//- Exploring potential software architectures and code structures.
+//- Debugging and troubleshooting implementation issues.
+//- Explaining programming concepts and suggesting improvements.
+//- Reviewing code for readability, modularity and maintainability.
+//- Identifying potential edge cases and improvements to code quality.
+//
+//All AI-generated suggestions were reviewed, tested, adapted and
+//integrated where appropriate. The final implementation,
+//architectural decisions, testing and responsibility for the
+//code remain with the author.
+//
+//AI tool: Claude (Anthropic)
+//Purpose:** Development assistance, debugging and code review.
+
 /**
  * Background thread that fetcher subtitle cues from the server in 20 second chunks and stores
  * them in a map shared with FrameSubtitlier.

@@ -20,6 +20,25 @@ import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
+//AI Assistance and Acknowledgement
+//
+//AI assistance was utilised throughout the development process
+//as a supporting tool. Claude (Anthropic) was used to assist with:
+//
+//- Exploring potential software architectures and code structures.
+//- Debugging and troubleshooting implementation issues.
+//- Explaining programming concepts and suggesting improvements.
+//- Reviewing code for readability, modularity and maintainability.
+//- Identifying potential edge cases and improvements to code quality.
+//
+//All AI-generated suggestions were reviewed, tested, adapted and
+//integrated where appropriate. The final implementation,
+//architectural decisions, testing and responsibility for the
+//code remain with the author.
+//
+//AI tool: Claude (Anthropic)
+//Purpose:** Development assistance, debugging and code review.
+
 /**
  * The controller part of the video player model-view-controller architecture.
  * 
