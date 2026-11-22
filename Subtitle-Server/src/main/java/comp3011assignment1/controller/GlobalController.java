@@ -16,6 +16,10 @@ import comp3011assignment1.service.GlobalStatsService;
  * REST controller that provides global app statistics.
  * 
  * Reveals the total transaction usage, in seconds, since the start of the server.
+ * 
+ * I replaced Assignment 1's /stats with /usage.
+ * 
+ * It reads from GlobalStatsService
  */
 
 @RestController
